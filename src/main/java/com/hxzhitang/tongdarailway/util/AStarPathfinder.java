@@ -56,7 +56,13 @@ public class AStarPathfinder {
         gScore.put(new NodeKey(start[0], start[1], NO_DIRECTION), 0.0);
         openSet.offer(startNode);
 
+        int visited=0;
+        boolean fixed=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled();
+        int minX=Math.min(start[0],validEnds.getFirst()[0])-192,maxX=Math.max(start[0],validEnds.getFirst()[0])+192;
+        int minZ=Math.min(start[1],validEnds.getFirst()[1])-192,maxZ=Math.max(start[1],validEnds.getFirst()[1])+192;
         while (!openSet.isEmpty()) {
+            // Bound prototype cold noise work; a failed route remains absent instead of stalling indefinitely.
+            if(fixed&&++visited>12000)return List.of();
             builder.checkPlanningCancelled();
             Node current = openSet.poll();
             int currentX = current.x;
@@ -78,6 +84,7 @@ public class AStarPathfinder {
                 int[] direction = DIRECTIONS[i];
                 int newX = currentX + direction[0] * PATH_STEP;
                 int newY = currentY + direction[1] * PATH_STEP;
+                if(fixed&&(newX<minX||newX>maxX||newY<minZ||newY>maxZ))continue;
                 if (!isWithinRegionRange(newX, newY, center, region_l1_limit)) {
                     continue;
                 }

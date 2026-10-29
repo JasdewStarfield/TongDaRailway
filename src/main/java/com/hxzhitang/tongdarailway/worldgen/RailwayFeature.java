@@ -114,6 +114,7 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
             }
         }
 
+        if(railwayMap.abandoned)com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.placePlatforms(world,cPos);
         return true;
     }
 
@@ -266,6 +267,9 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
                     double localX = t * route.getTotalLength();
 
                     double z0 = vec0.dot(binormal0);
+                    // Missing bridge spans and washed-out roadbeds share the same saved arc-length damage.
+                    if(railwayMap.abandoned&&!conditionTunnel&&Math.abs(z0)<3
+                            &&com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.major(railwayMap.decaySeed,route,t*route.getTotalLength()))continue;
 
                     if (structureTemplate == null || !structureTemplate.isInVoxel(1, 1, z0))
                         continue;
@@ -320,6 +324,12 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
     }
 
     private static void placeAndUpdate(WorldGenLevel world, BlockPos blockPos, BlockState blockState) {
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
+            if(!com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.protects(blockPos)
+                    &&!world.getBlockState(blockPos).hasBlockEntity()&&!world.getBlockState(blockPos).is(Blocks.BEDROCK))
+                world.setBlock(blockPos,blockState,2);
+            return;
+        }
         world.setBlock(blockPos, blockState, 3);
         BlockState updatedState = Block.updateFromNeighbourShapes(world.getBlockState(blockPos), world, blockPos);
         world.setBlock(blockPos, updatedState, 3);
@@ -332,6 +342,11 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
     }
 
     private static void placeNotAirReplaceStone(WorldGenLevel world, BlockPos blockPos, BlockState blockState, BlockState replaceBlock) {
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
+            if(!blockState.is(Blocks.STONE))placeAndUpdate(world,blockPos,blockState);
+            else if(world.getBlockState(blockPos).canOcclude())placeAndUpdate(world,blockPos,replaceBlock);
+            return;
+        }
         if (!blockState.is(Blocks.STONE)) {
             world.setBlock(blockPos, blockState, 3);
             return;

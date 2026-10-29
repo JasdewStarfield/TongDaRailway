@@ -43,6 +43,11 @@ public class TrackSpawnerBlockEntity extends BlockEntity {
             if (!Config.enableTrackSpawner)
                 return;
             if (level instanceof ServerLevel world) {
+                // A deferred curve may only touch FULL loaded chunks. Waiting never requests a neighbour.
+                if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
+                    entity.tryPlaceFixed(world);
+                    return;
+                }
                 for (TrackPutInfo track : entity.trackPutInfos) {
                     if (track.bezier() != null) {
 //                        //高差过大拒绝生成
@@ -65,6 +70,35 @@ public class TrackSpawnerBlockEntity extends BlockEntity {
                     .setValue(RoseQuartzLampBlock.POWERING, true), 3);
             entity.spawnedTrack = true;
         }
+    }
+
+    /** Bounded server-thread completion is shared by normal proximity ticks and the isolated audit. */
+    public boolean tryPlaceFixed(ServerLevel world) {
+        if(spawnedTrack)return true;
+        for(var track:trackPutInfos) {
+            if(!ready(world,track.pos()))return false;
+            if(track.bezier()!=null&&!ready(world,track.pos().offset(net.minecraft.core.BlockPos.containing(track.bezier().endOffset()))))return false;
+        }
+        if(!com.hxzhitang.tongdarailway.railway.fixed.FixedPlacementBudget.acquire(world,trackPutInfos.size()))return false;
+        for(var track:trackPutInfos) {
+            if(track.bezier()!=null){placeCurveTrack(world,track);placeCurveTrackEntity(world,track);}
+            else {
+                var old=world.getBlockState(track.pos());
+                // A neighbouring placer can finish its straight rail after this curve anchor.
+                // Preserve HAS_BE and its connections instead of replacing them with a plain rail.
+                if(!old.is(AllBlocks.TRACK)||!old.getValue(TrackBlock.HAS_BE))
+                    world.setBlock(track.pos(),AllBlocks.TRACK.getDefaultState().setValue(TrackBlock.SHAPE,track.shape()),3);
+            }
+        }
+        spawnedTrack=true;
+        // Replace the temporary placer once. Missing rails were removed before this list was saved.
+        world.setBlock(worldPosition,net.minecraft.world.level.block.Blocks.COBBLESTONE.defaultBlockState(),2);
+        return true;
+    }
+    private static boolean ready(ServerLevel world,BlockPos pos) {
+        for(int x=-1;x<=1;x++)for(int z=-1;z<=1;z++)
+            if(world.getChunkSource().getChunkNow((pos.getX()>>4)+x,(pos.getZ()>>4)+z)==null)return false;
+        return true;
     }
 
     public void addTrackPutInfo(List<TrackPutInfo> trackPutInfos) {

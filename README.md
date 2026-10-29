@@ -1,3 +1,27 @@
+# TongDaRailway - EOW fork
+
+This independent GPL-3.0 fork is based on [Hello-LuckyHuang/TongDaRailway](https://github.com/Hello-LuckyHuang/TongDaRailway), upstream commit `2df7dd5`. Original authors and license are retained. EOW-specific modifications by Jasdew Starfield, 2026-10-29.
+
+The fork defaults to fixed, seed-bound routes for abandoned infrastructure. It retains the original route, vertical-profile, roadbed, bridge, tunnel and Create track implementations. It does not include EOWCore source code.
+
+- Set `fixedNodeMode = true` in the common configuration and supply `config/tongdarailway-fixed-nodes.json` before creating a new world.
+- With no matching node file or seed, no random railway network is generated.
+- Each node supplies `id`, `rail` XYZ, horizontal `facing`, `protected_center` XYZ and `protected_radius`. Links supply `from` and `to` node IDs. The root has `format: 1`, a world `seed`, `nodes`, and `links`.
+- Node ports must be outside protected building/shaft footprints. Small loading pads are placed beside the track ends. The prototype accepts at most eight nodes, four links and 4096-block links.
+- Short missing-track intervals are fixed by route identity and seed. Some intervals also omit the central bridge span or roadbed. Planned damage avoids the first and last 80 blocks. Entire curves crossing a gap are omitted, so actual missing rail spans can be longer than the short damage interval.
+- Roadbeds are placed during generation. Tracks finish near players only when endpoint neighbourhoods are already loaded. At most two placers and normally 32 track records finish per server tick. The temporary placer becomes cobblestone once; damaged tracks are excluded from its saved work list.
+- Changing anchors is intended for new worlds. Automatic discovery/selection of EOW structures is not implemented; supply frozen endpoint coordinates in the external node file. Upstream and fork share the `tongdarailway` mod ID and must not be installed together.
+
+Build with Java 21: `./gradlew build --no-daemon --no-configuration-cache`. This fork targets NeoForge 21.1.262 and Create 6.0.10. Upstream Java files retain their GBK encoding.
+
+## EOW 分支
+
+本分支独立维护，保留上游作者与 GPL-3.0 授权。默认使用创建世界前提供的固定节点文件，节点带世界种子校验。节点附近保留建筑／矿井保护范围，并生成小型装卸平台。线路沿用上游路基、桥隧和 Create 曲线轨道，加入持久化的短缺轨段与部分路基缺口。
+
+当前节点需从外部配置提供，尚未实现自动寻找雷达站与矿井。修改节点后应新建测试世界。轨道延后放置只访问已加载区块，损毁段不进入待铺轨清单。
+
+---
+
 # TongDaRailway Mod 通达铁路
 
 这是一个添加自动生成机械动力铁路的模组

@@ -60,6 +60,12 @@ public class Tongdarailway {
 
     }
 
+    /** Load immutable external node data before terrain generation begins. */
+    @SubscribeEvent
+    public void onServerAboutToStart(net.neoforged.neoforge.event.server.ServerAboutToStartEvent event) {
+        com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.load();
+    }
+
     // You can use SubscribeEvent and let the Event Bus discover methods to call
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {

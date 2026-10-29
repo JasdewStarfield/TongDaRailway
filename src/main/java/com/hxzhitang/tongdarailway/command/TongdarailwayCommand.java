@@ -62,6 +62,17 @@ public final class TongdarailwayCommand {
     private static int startStationSearch(CommandSourceStack source, StationSearchType searchType)
             throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
+        // Fixed-node coordinates are an operator inspection tool, not a search over random stations.
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
+            if(!source.hasPermission(2))return 0;
+            var network=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.current();
+            if(network.seed()!=player.serverLevel().getSeed()) {
+                source.sendFailure(Component.literal("No fixed railway network for this seed."));return 0;
+            }
+            for(var node:network.nodes())source.sendSuccess(()->Component.literal(node.id()+": "+
+                    node.rail().getX()+" "+node.rail().getY()+" "+node.rail().getZ()),false);
+            return network.nodes().size();
+        }
         UUID playerId = player.getUUID();
         if (!SEARCHING_PLAYERS.add(playerId)) {
             source.sendFailure(Component.translatable("commands.tongdarailway.searchstation.already_searching"));

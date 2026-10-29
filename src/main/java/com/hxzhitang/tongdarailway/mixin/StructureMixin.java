@@ -47,6 +47,8 @@ public class StructureMixin {
 
     @Unique
     private static boolean tongDaRailway211$shouldCancel(Structure structure, BlockPos pos, Structure.GenerationContext context) {
+        // Existing radar buildings and mine starts remain authoritative endpoints in the EOW fork.
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled())return false;
         RailwayBuilder builder = RailwayBuilder.getInstance(context.seed());
         if (builder == null) return false;
 

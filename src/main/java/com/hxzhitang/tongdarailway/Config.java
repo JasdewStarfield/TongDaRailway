@@ -27,6 +27,12 @@ public class Config {
             .comment("Use the track spawner,(true) or place rails during world generation.(false)")
             .define("placeTracksUsingTrackSpawner", true);
 
+    // The fork defaults to explicit anchors; no random network is added to unrelated regions.
+    private static final ModConfigSpec.BooleanValue FIXED_NODE_MODE = BUILDER
+            .comment("Use seed-bound tongdarailway-fixed-nodes.json instead of random stations. New worlds only.")
+            .define("fixedNodeMode", true);
+    public static boolean fixedNodeMode = true;
+
     static final ModConfigSpec SPEC = BUILDER.build();
 
     public static double areaGenRailwayProbability;
@@ -36,6 +42,7 @@ public class Config {
 
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
+        fixedNodeMode = FIXED_NODE_MODE.get();
         areaGenRailwayProbability = AREA_GEN_RAILWAY_PROBABILITY.get();
         enableTrackSpawner = ENABLE_TRACK_SPAWNER.get();
         generateTrackSpawner = GENERATE_TRACK_SPAWNER.get();

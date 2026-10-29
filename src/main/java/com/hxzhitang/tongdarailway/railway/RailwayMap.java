@@ -24,6 +24,8 @@ public class RailwayMap {
     public static final int samplingNum = 2; // 每个区块的采样数
 
     public final RegionPos regionPos;
+    public boolean abandoned;
+    public long decaySeed;
 
     //********每个区域的数据*********
     // 路线
@@ -41,6 +43,12 @@ public class RailwayMap {
     // 规划铁路路线方法
     public void startPlanningRoutes(WorldGenRegion level, RailwayBuilder builder) {
         builder.checkPlanningCancelled();
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
+            abandoned=true;decaySeed=level.getSeed();
+            if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.intersects(regionPos,level.getSeed()))
+                for(var route:builder.fixedRoutes())putChunk(route);
+            return;
+        }
         try {
             // 生成车站位置和连接规划
             RoutePlanner routePlanner = new RoutePlanner();
@@ -106,7 +114,10 @@ public class RailwayMap {
         }
 
         for (TrackPutInfo track : route.trackPutInfos()) {
+            if(abandoned&&!com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.keep(decaySeed,route.way(),track))continue;
             var pos = track.pos();
+            // Cross-region links publish each track record only in the region owning its start.
+            if(abandoned&&!RegionPos.regionPosFromWorldPos(pos.getX(),pos.getZ()).equals(regionPos))continue;
             trackMap.computeIfAbsent(new ChunkPos(Math.floorDiv(pos.getX(), 16), Math.floorDiv(pos.getZ(), 16)), k -> new ArrayList<>()).add(track);
         }
     }
@@ -162,6 +173,7 @@ public class RailwayMap {
     public CompoundTag toNBT() {
         CompoundTag nbt = new CompoundTag();
         nbt.put("RegionPos", regionPos.toNBT());
+        nbt.putBoolean("EowAbandoned",abandoned);nbt.putLong("EowDecaySeed",decaySeed);
 
         // 保存车站
         ListTag stationTag = new ListTag();
@@ -217,6 +229,7 @@ public class RailwayMap {
     public static RailwayMap fromNBT(CompoundTag nbt) {
         RegionPos regionPos = RegionPos.fromNBT((ListTag) nbt.get("RegionPos"));
         RailwayMap railwayMap = new RailwayMap(regionPos);
+        railwayMap.abandoned=nbt.getBoolean("EowAbandoned");railwayMap.decaySeed=nbt.getLong("EowDecaySeed");
 
         // 读取车站
         ListTag stationTag = (ListTag) nbt.get("Stations");

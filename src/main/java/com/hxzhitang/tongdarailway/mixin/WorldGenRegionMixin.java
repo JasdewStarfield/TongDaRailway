@@ -16,6 +16,7 @@ public class WorldGenRegionMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/WorldGenRegion;ensureCanWrite(Lnet/minecraft/core/BlockPos;)Z")
     )
     private boolean bypassExpensiveCalculationIfNecessary(WorldGenRegion instance, BlockPos blockPos, Operation<Boolean> original, BlockPos pos, BlockState state) {
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled())return original.call(instance,blockPos);
         if (state.is(AllBlocks.TRACK)) {
             return true;
         } else {

@@ -26,6 +26,20 @@ public class RailwayBuilder {
     private static final AtomicInteger NEXT_POOL_ID = new AtomicInteger();
     private static RailwayBuilder instance;
 
+    private volatile java.util.List<com.hxzhitang.tongdarailway.railway.planner.RoutePlanner.ResultWay> fixedRoutes;
+    private RuntimeException fixedFailure;
+    /** One immutable corridor plan is shared by both sides of a region boundary. */
+    public synchronized java.util.List<com.hxzhitang.tongdarailway.railway.planner.RoutePlanner.ResultWay> fixedRoutes() {
+        if(fixedFailure!=null)throw fixedFailure;
+        try {
+            if(fixedRoutes==null)fixedRoutes=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.plan(this,level.getLevel());
+        } catch(RuntimeException failure) {
+            // A bad fixed link must not repeat a cold terrain search for every arriving chunk.
+            fixedFailure=failure;throw failure;
+        }
+        return fixedRoutes;
+    }
+
     private final long seed;
     private final MinecraftServer server;
     private final WorldGenRegion level;
@@ -50,8 +64,8 @@ public class RailwayBuilder {
         int poolId = NEXT_POOL_ID.incrementAndGet();
         AtomicInteger nextThreadId = new AtomicInteger();
         this.regionRailwayLoadPoolExecutor = new ThreadPoolExecutor(
-                64,
-                1024,
+                2,
+                2,
                 1,
                 TimeUnit.DAYS,
                 new LinkedBlockingQueue<>(),
@@ -156,6 +170,9 @@ public class RailwayBuilder {
     }
 
     public void generateRailway(RegionPos regionPos) {
+        // Regions outside the finite network need neither a worker nor a SavedData entry.
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()
+                &&!com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.intersects(regionPos,seed))return;
         // Contain planning failures here so callers can use their existing fallback.
         try {
             generateRailwayInternal(regionPos);
@@ -248,6 +265,9 @@ public class RailwayBuilder {
      */
     public int getHeight(int wx, int wz) {
         checkPlanningCancelled();
+        // Fixed links sample only their narrow corridor, rather than allocating a 4096-square height map.
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled())
+            return getExactHeight(level.getLevel(),Math.floorDiv(wx+16,32)*32,Math.floorDiv(wz+16,32)*32);
         RegionPos regionPos = new RegionPos(
                 Math.floorDiv(wx, 16 * CHUNK_GROUP_SIZE),
                 Math.floorDiv(wz, 16 * CHUNK_GROUP_SIZE)
