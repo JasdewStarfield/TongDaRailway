@@ -25,11 +25,11 @@ public class Config {
 
     private static final ModConfigSpec.BooleanValue PLACE_TRACKS_USING_TRACK_SPAWNER = BUILDER
             .comment("Use the track spawner,(true) or place rails during world generation.(false)")
-            .define("placeTracksUsingTrackSpawner", true);
+            .define("placeTracksUsingTrackSpawner", false);
 
     // The fork defaults to explicit anchors; no random network is added to unrelated regions.
     private static final ModConfigSpec.BooleanValue FIXED_NODE_MODE = BUILDER
-            .comment("Use seed-bound tongdarailway-fixed-nodes.json instead of random stations. New worlds only.")
+            .comment("Use EOW automatic or seed-bound node networks instead of upstream random stations. New worlds only.")
             .define("fixedNodeMode", true);
     public static boolean fixedNodeMode = true;
 
@@ -42,6 +42,12 @@ public class Config {
 
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
+        // Client and common configs share this event bus; each spec loads independently.
+        if (event.getConfig().getSpec() != SPEC
+                || (!(event instanceof ModConfigEvent.Loading)
+                && !(event instanceof ModConfigEvent.Reloading))) {
+            return;
+        }
         fixedNodeMode = FIXED_NODE_MODE.get();
         areaGenRailwayProbability = AREA_GEN_RAILWAY_PROBABILITY.get();
         enableTrackSpawner = ENABLE_TRACK_SPAWNER.get();

@@ -40,6 +40,30 @@ public class RailwayBuilder {
         return fixedRoutes;
     }
 
+    private final Map<Long,com.hxzhitang.tongdarailway.railway.fixed.RailwayDamagePlan> fixedDamage=new ConcurrentHashMap<>();
+    public com.hxzhitang.tongdarailway.railway.fixed.RailwayDamagePlan damagePlan(com.hxzhitang.tongdarailway.railway.planner.RoutePlanner.ResultWay route) {
+        return fixedDamage.computeIfAbsent(com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route.way()),
+                key->com.hxzhitang.tongdarailway.railway.fixed.RailwayDamagePlan.build(seed,route.way(),route.trackPutInfos()));
+    }
+    private com.hxzhitang.tongdarailway.railway.fixed.WorldgenTrackPlan worldgenTracks;
+    /** Index both curve endpoints, including endpoints across a planning-region boundary. */
+    public synchronized com.hxzhitang.tongdarailway.railway.fixed.WorldgenTrackPlan worldgenTracks() {
+        if(worldgenTracks==null) {
+            var kept=new java.util.ArrayList<com.hxzhitang.tongdarailway.structure.TrackPutInfo>();
+            for(var route:fixedRoutes())for(var track:route.trackPutInfos())
+                if(damagePlan(route).keep(route.way(),track))kept.add(track);
+            worldgenTracks=new com.hxzhitang.tongdarailway.railway.fixed.WorldgenTrackPlan(kept,com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.stations(seed));
+        }
+        return worldgenTracks;
+    }
+
+    /** Regional endpoint indices are owned by a bounded system cache, not one world-wide route list. */
+    public com.hxzhitang.tongdarailway.railway.fixed.WorldgenTrackPlan worldgenTracks(net.minecraft.world.level.ChunkPos owner) {
+        if(com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.enabled())return
+                com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.plan(this,level.getLevel(),RegionPos.regionPosFromChunkPos(owner)).tracks();
+        return worldgenTracks();
+    }
+
     private final long seed;
     private final MinecraftServer server;
     private final WorldGenRegion level;
@@ -170,6 +194,9 @@ public class RailwayBuilder {
     }
 
     public void generateRailway(RegionPos regionPos) {
+        if(com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.enabled()) {
+            if(!com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.active(regionPos))return;
+        } else
         // Regions outside the finite network need neither a worker nor a SavedData entry.
         if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()
                 &&!com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.intersects(regionPos,seed))return;
@@ -305,6 +332,12 @@ public class RailwayBuilder {
         });
     }
 
+    /** Check the noise column itself: a dry island remains usable even inside an ocean biome. */
+    public boolean hasSolidBaseSurface(ServerLevel serverLevel,int x,int z,int height) {
+        var source=serverLevel.getChunkSource();
+        var state=source.getGenerator().getBaseColumn(x,z,serverLevel,source.randomState()).getBlock(height-1);
+        return !state.isAir()&&state.getFluidState().isEmpty();
+    }
     /** Returns whether the quart containing the position has an ocean biome. */
     public boolean isOceanBiome(ServerLevel serverLevel, int wx, int wz) {
         checkPlanningCancelled();

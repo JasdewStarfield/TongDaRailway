@@ -9,9 +9,14 @@
     "StructureManagerAccessor",
     "StructureMixin",
     "TrackBlockEntityExtension",
-    "WorldGenRegionMixin"
+    "WorldGenRegionMixin",
+    "TrackGraphTraversalMixin",
+    "LevelGraphAccessMixin"
   ],
   "client": [
+    "client.VisualSnowUpdatesMixin",
+    "client.CurveSleeperSnowClearanceMixin",
+    "client.TrackCurveRenderDistanceMixin"
   ],
   "injectors": {
     "defaultRequire": 1

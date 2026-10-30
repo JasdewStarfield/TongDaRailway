@@ -54,6 +54,7 @@ public class Tongdarailway {
 
         // Register our mod's ModConfigSpec so that FML can create and load the config file for us
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, VisualSnowConfig.SPEC);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -67,14 +68,30 @@ public class Tongdarailway {
     }
 
     // You can use SubscribeEvent and let the Event Bus discover methods to call
-    @SubscribeEvent
+    @SubscribeEvent(priority=net.neoforged.bus.api.EventPriority.LOWEST)
     public void onServerStarting(ServerStartingEvent event) {
-        // Do something when the server starts
+        // Core has resolved strategic sites before this lowest-priority integration reads them.
+        com.hxzhitang.tongdarailway.railway.fixed.AutomaticRailwayNetwork.initialize(event.getServer());
+    }
+
+    /** Finish/cancel speculative planning before level save and shutdown begin. */
+    @SubscribeEvent
+    public void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
+        com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.stopPrefetch();
     }
 
     @SubscribeEvent
     public void onServerStopped(ServerStoppedEvent event) {
         RailwayBuilder.onServerStopped(event.getServer());
+        com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.clear();
+        com.hxzhitang.tongdarailway.railway.fixed.NoLoadGraphAccess.clear();
+    }
+
+    /** Retry native graph boundaries only after their remote chunks are already loaded. */
+    @SubscribeEvent
+    public void onPostServerTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
+        com.hxzhitang.tongdarailway.railway.fixed.NoLoadGraphAccess.tick(event.getServer());
+        com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.tickPrefetch(event.getServer());
     }
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent

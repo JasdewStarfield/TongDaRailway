@@ -91,7 +91,10 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
                 }
             }
         }
-        if (!Config.useTrackSpawnerPlaceTrack) {
+        if (!Config.useTrackSpawnerPlaceTrack && railwayMap.abandoned) {
+            com.hxzhitang.tongdarailway.railway.fixed.WorldgenTrackPlacement.place(world,cPos,builder.worldgenTracks(cPos));
+        }
+        if (!Config.useTrackSpawnerPlaceTrack && !railwayMap.abandoned) {
             // 咱就是说，能不能把文件编码改成UTF-8？IDEA一打开就是乱码
             // 抱歉，似乎我的IDEA一开始就是GBK编码 :-( 确实不想再改了
 
@@ -179,10 +182,28 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
                         Clearable.tryClear(world.getBlockEntity(blockPos));
                         world.setBlock(blockPos, Blocks.BARRIER.defaultBlockState(), 20);
                     }
-                    world.setBlock(blockPos, blockState, 3);
+                    if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()
+                            &&com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.protects(blockPos))continue;
+                    world.setBlock(blockPos, blockState, 2);
                     if (shouldLoadBlockEntity) {
                         placeBlockEntity(world, blockPos, blockEntityTag);
                     }
+                }
+            }
+        }
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
+            int floor=(int)center.y+1-station.getBeardifierGroundLevelDelta();
+            for(int x=0;x<16;x++)for(int z=0;z<16;z++) {
+                var base=new BlockPos(cPos.getMinBlockX()+x,floor,cPos.getMinBlockZ()+z);
+                var state=world.getBlockState(base);
+                if(!station.isInVoxel(Vec3.atLowerCornerOf(base).add(-0.5,-0.5,-0.5).subtract(center))
+                        ||!state.isFaceSturdy(world,base,Direction.DOWN))continue;
+                // At most six blocks of local fill; unsuitable cliffs are rejected by the selector.
+                for(int depth=1;depth<=6;depth++) {
+                    var support=base.below(depth);var old=world.getBlockState(support);
+                    if(old.isFaceSturdy(world,support,Direction.UP)||old.hasBlockEntity()||old.is(Blocks.BEDROCK)
+                            ||com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.protects(support))break;
+                    world.setBlock(support,(depth<=2?Blocks.DIRT:Blocks.STONE).defaultBlockState(),2);
                 }
             }
         }
@@ -194,7 +215,13 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
         tag.putInt("y", blockPos.getY());
         tag.putInt("z", blockPos.getZ());
 
-        BlockEntity blockEntity = world.getBlockEntity(blockPos);
+        var owner=world.getChunk(blockPos.getX()>>4,blockPos.getZ()>>4);
+        BlockEntity blockEntity=owner.getBlockEntity(blockPos);
+        if(blockEntity==null)blockEntity=world.getBlockEntity(blockPos);
+        if(blockEntity==null&&world.getBlockState(blockPos).getBlock() instanceof net.minecraft.world.level.block.EntityBlock factory) {
+            blockEntity=factory.newBlockEntity(blockPos,world.getBlockState(blockPos));
+            if(blockEntity!=null)owner.setBlockEntity(blockEntity);
+        }
         // 不加载传动轴方块实体避免传动轴断裂和虚空应力
         if (blockEntity != null && !(blockEntity instanceof KineticBlockEntity)) {
             blockEntity.loadWithComponents(tag, world.registryAccess());
@@ -248,7 +275,7 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
 
                     // 根据曲线上高度和实际高度判断应用桥隧
                     BlockPos nearestPos = new BlockPos((int) nearest0.x, (int) nearest0.y, (int) nearest0.z);
-                    int h = world.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, nearestPos.getX(), nearestPos.getZ());
+                    int h = world.getHeight(Heightmap.Types.OCEAN_FLOOR_WG,cPos.getMinBlockX()+x,cPos.getMinBlockZ()+z);
 
                     boolean conditionBridge = nearest0.y > h + 4;
                     boolean conditionTunnel = nearest0.y < h - 12;
@@ -267,9 +294,11 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
                     double localX = t * route.getTotalLength();
 
                     double z0 = vec0.dot(binormal0);
-                    // Missing bridge spans and washed-out roadbeds share the same saved arc-length damage.
-                    if(railwayMap.abandoned&&!conditionTunnel&&Math.abs(z0)<3
-                            &&com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.major(railwayMap.decaySeed,route,t*route.getTotalLength()))continue;
+                    var scars=railwayMap.damagePlans.get(com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route));
+                    boolean damage=railwayMap.abandoned&&scars!=null&&scars.contains(localX);
+                    // Omit the central deck AND supports at a failed bridge span. Adjacent edges
+                    // remain, giving a visible break instead of an intact bridge with missing rails.
+                    if(damage&&conditionBridge&&Math.abs(z0)<3)continue;
 
                     if (structureTemplate == null || !structureTemplate.isInVoxel(1, 1, z0))
                         continue;
@@ -294,6 +323,13 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
                         }
                     }
                     // 向下填充地基直到遇到支撑方块(隧道不考虑向下填充地基)
+                    if(damage&&!conditionBridge&&Math.abs(z0)<3.5) {
+                        // Write only this loop's owned X/Z column. Collapses follow the tunnel;
+                        // surface failures form an uneven lateral landslide across the abandoned track.
+                        var rail=new BlockPos(cPos.getMinBlockX()+x,(int)nearest0.y,cPos.getMinBlockZ()+z);
+                        com.hxzhitang.tongdarailway.railway.fixed.RailwayRuin.placeDebris(world,rail,z0,conditionTunnel,
+                                railwayMap.decaySeed^com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route));
+                    }
                     if (conditionTunnel)
                         continue;
 

@@ -26,6 +26,7 @@ public class RailwayMap {
     public final RegionPos regionPos;
     public boolean abandoned;
     public long decaySeed;
+    public final Map<Long,com.hxzhitang.tongdarailway.railway.fixed.RailwayDamagePlan> damagePlans=new ConcurrentHashMap<>();
 
     //********每个区域的数据*********
     // 路线
@@ -43,10 +44,24 @@ public class RailwayMap {
     // 规划铁路路线方法
     public void startPlanningRoutes(WorldGenRegion level, RailwayBuilder builder) {
         builder.checkPlanningCancelled();
+        if(com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.enabled()) {
+            abandoned=true;decaySeed=level.getSeed();
+            var system=com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.plan(builder,level.getLevel(),regionPos);
+            stations.addAll(system.stations());
+            for(var route:system.routes()) {
+                damagePlans.put(com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route.way()),builder.damagePlan(route));putChunk(route);
+            }
+            return;
+        }
         if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
             abandoned=true;decaySeed=level.getSeed();
+            var planned=builder.fixedRoutes();
+            stations.addAll(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.stations(level.getSeed()));
             if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.intersects(regionPos,level.getSeed()))
-                for(var route:builder.fixedRoutes())putChunk(route);
+                for(var route:planned) {
+                    damagePlans.put(com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route.way()),builder.damagePlan(route));
+                    putChunk(route);
+                }
             return;
         }
         try {
@@ -114,7 +129,7 @@ public class RailwayMap {
         }
 
         for (TrackPutInfo track : route.trackPutInfos()) {
-            if(abandoned&&!com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.keep(decaySeed,route.way(),track))continue;
+            if(abandoned&&!damagePlans.get(com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route.way())).keep(route.way(),track))continue;
             var pos = track.pos();
             // Cross-region links publish each track record only in the region owning its start.
             if(abandoned&&!RegionPos.regionPosFromWorldPos(pos.getX(),pos.getZ()).equals(regionPos))continue;
@@ -174,6 +189,7 @@ public class RailwayMap {
         CompoundTag nbt = new CompoundTag();
         nbt.put("RegionPos", regionPos.toNBT());
         nbt.putBoolean("EowAbandoned",abandoned);nbt.putLong("EowDecaySeed",decaySeed);
+        var scars=new ListTag();damagePlans.forEach((id,plan)->{var value=new CompoundTag();value.putLong("Route",id);value.put("Intervals",plan.toNBT());scars.add(value);});nbt.put("EowDamagePlans",scars);
 
         // 保存车站
         ListTag stationTag = new ListTag();
@@ -230,6 +246,9 @@ public class RailwayMap {
         RegionPos regionPos = RegionPos.fromNBT((ListTag) nbt.get("RegionPos"));
         RailwayMap railwayMap = new RailwayMap(regionPos);
         railwayMap.abandoned=nbt.getBoolean("EowAbandoned");railwayMap.decaySeed=nbt.getLong("EowDecaySeed");
+        for(var item:nbt.getList("EowDamagePlans",Tag.TAG_COMPOUND)) {
+            var value=(CompoundTag)item;railwayMap.damagePlans.put(value.getLong("Route"),com.hxzhitang.tongdarailway.railway.fixed.RailwayDamagePlan.fromNBT(value.getList("Intervals",Tag.TAG_COMPOUND)));
+        }
 
         // 读取车站
         ListTag stationTag = (ListTag) nbt.get("Stations");

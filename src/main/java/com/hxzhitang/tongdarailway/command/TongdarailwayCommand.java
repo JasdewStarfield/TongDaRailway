@@ -65,6 +65,12 @@ public final class TongdarailwayCommand {
         // Fixed-node coordinates are an operator inspection tool, not a search over random stations.
         if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
             if(!source.hasPermission(2))return 0;
+            if(com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.enabled()) {
+                var stations=com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.knownStations().entrySet().stream()
+                        .sorted(java.util.Comparator.comparingDouble(e->e.getValue().distSqr(player.blockPosition()))).limit(16).toList();
+                for(var entry:stations){var p=entry.getValue();source.sendSuccess(()->Component.literal(entry.getKey()+": "+p.getX()+" "+p.getY()+" "+p.getZ()),false);}
+                return stations.size();
+            }
             var network=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.current();
             if(network.seed()!=player.serverLevel().getSeed()) {
                 source.sendFailure(Component.literal("No fixed railway network for this seed."));return 0;

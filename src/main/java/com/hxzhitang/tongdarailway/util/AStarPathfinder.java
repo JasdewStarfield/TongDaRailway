@@ -44,6 +44,11 @@ public class AStarPathfinder {
             return new ArrayList<>();
         }
 
+        // Long regional links need a coarser corridor search, not a larger node budget.
+        // Native curve/profile construction still resolves the resulting control points.
+        boolean fixed=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled();
+        double directDistance=heuristic(start,validEnds);
+        int step=fixed&&directDistance>2048?36:fixed&&directDistance>1024?24:PATH_STEP;
         PriorityQueue<Node> openSet = new PriorityQueue<>(Comparator.comparingDouble(node -> node.f));
 
         Map<NodeKey, Double> gScore = new HashMap<>();
@@ -57,12 +62,14 @@ public class AStarPathfinder {
         openSet.offer(startNode);
 
         int visited=0;
-        boolean fixed=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled();
         int minX=Math.min(start[0],validEnds.getFirst()[0])-192,maxX=Math.max(start[0],validEnds.getFirst()[0])+192;
         int minZ=Math.min(start[1],validEnds.getFirst()[1])-192,maxZ=Math.max(start[1],validEnds.getFirst()[1])+192;
         while (!openSet.isEmpty()) {
             // Bound prototype cold noise work; a failed route remains absent instead of stalling indefinitely.
-            if(fixed&&++visited>12000)return List.of();
+            if(fixed&&++visited>12000) {
+                com.hxzhitang.tongdarailway.Tongdarailway.LOGGER.warn("Regional route search exhausted its node budget: {} -> {}, step {}",Arrays.toString(start),Arrays.toString(validEnds.getFirst()),step);
+                return List.of();
+            }
             builder.checkPlanningCancelled();
             Node current = openSet.poll();
             int currentX = current.x;
@@ -75,22 +82,22 @@ public class AStarPathfinder {
                 continue;
             }
 
-            int[] reachedTarget = findReachedTarget(currentX, currentY, validEnds, PATH_STEP);
+            int[] reachedTarget = findReachedTarget(currentX, currentY, validEnds, step);
             if (reachedTarget != null) {
                 return reconstructPath(current, start, reachedTarget);
             }
 
             for (int i = 0; i < DIRECTIONS.length; i++) {
                 int[] direction = DIRECTIONS[i];
-                int newX = currentX + direction[0] * PATH_STEP;
-                int newY = currentY + direction[1] * PATH_STEP;
+                int newX = currentX + direction[0] * step;
+                int newY = currentY + direction[1] * step;
                 if(fixed&&(newX<minX||newX>maxX||newY<minZ||newY>maxZ))continue;
                 if (!isWithinRegionRange(newX, newY, center, region_l1_limit)) {
                     continue;
                 }
                 NodeKey neighborKey = new NodeKey(newX, newY, i);
 
-                double movementCost = MOVEMENT_COST[i] * PATH_STEP;
+                double movementCost = MOVEMENT_COST[i] * step;
                 double directionChangeCost = current.directionIndex != NO_DIRECTION && current.directionIndex != i
                         ? DIRECTION_CHANGE_COST
                         : 0.0;

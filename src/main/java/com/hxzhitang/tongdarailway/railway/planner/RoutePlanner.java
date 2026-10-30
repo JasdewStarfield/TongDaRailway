@@ -22,7 +22,10 @@ public class RoutePlanner {
      */
     public ResultWay getWay(RailwayBuilder builder, List<int[]> way, StationPlanner.ConnectionGenInfo connectionGenInfo, ServerLevel level) {
         List<int[]> handledHeightWay = handleHeight(builder, way, level, connectionGenInfo);
-        return connectTrackNew4(handledHeightWay, connectionGenInfo);
+        var result=connectTrackNew4(handledHeightWay, connectionGenInfo);
+        if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()&&result!=null
+                &&result.trackPutInfos().stream().anyMatch(t->!com.hxzhitang.tongdarailway.railway.fixed.NativeCurveSafety.valid(t)))return null;
+        return result;
     }
 
     /**
@@ -153,12 +156,12 @@ public class RoutePlanner {
                     // 侧前方 90度直角
                     aDir = MyMth.rotateAroundY(startDir, cross, 90);
                 }
-                result.connectWay(start, aPos, startDir, aDir.reverse(), maximiseTurn);
-                result.connectWay(aPos, end, aDir, endDir, maximiseTurn);
+                if(!result.connectWay(start, aPos, startDir, aDir.reverse(), maximiseTurn))return null;
+                if(!result.connectWay(aPos, end, aDir, endDir, maximiseTurn))return null;
             }
             // 可以连接
             else {
-                result.connectWay(start, end, startDir, endDir, start.y == end.y);
+                if(!result.connectWay(start, end, startDir, endDir, start.y == end.y))return null;
             }
             startDir = endDir.reverse();
         }
@@ -173,7 +176,16 @@ public class RoutePlanner {
             CurveRoute way,
             List<TrackPutInfo> trackPutInfos
     ) {
-        public void connectWay(Vec3 start, Vec3 end, Vec3 startDir, Vec3 endDir, boolean maximiseTurn) {
+        public boolean connectWay(Vec3 start, Vec3 end, Vec3 startDir, Vec3 endDir, boolean maximiseTurn) {
+            if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
+                // Prefer compact native corners with actual straight approaches on both sides.
+                maximiseTurn=false;
+                var flat=end.subtract(start).multiply(1,0,1);
+                if(flat.lengthSqr()>0&&flat.normalize().dot(startDir.normalize())>.999999
+                        &&startDir.normalize().dot(endDir.normalize())<-.999999) {
+                    addBezier(start,startDir,end.subtract(start),endDir);return true;
+                }
+            }
             int h0 = (int) start.y;
             int h1 = (int) ((2*start.y + end.y) / 3);
             int h2 = (int) ((start.y + 2*end.y) / 3);
@@ -203,9 +215,12 @@ public class RoutePlanner {
                 }
             } else {
                 // 强行连接
+                // Fixed infrastructure must retry the layout instead of publishing a forced curve.
+                if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled())return false;
                 addBezier(start, startDir, end.subtract(start), endDir);
                 Tongdarailway.LOGGER.warn("The road position cannot be determined, and the line has been forced to connect. {} {}", start, end);
             }
+            return true;
         }
 
         private static ConnectInfo getConnect(BlockPos pos1, BlockPos pos2, Vec3 axis1, Vec3 axis2, boolean maximiseTurn) {
@@ -372,7 +387,18 @@ public class RoutePlanner {
         }
 
         public void addBezier(Vec3 start, Vec3 startDir, Vec3 endOffset, Vec3 endDir) {
-            if (Mth.equal(Math.abs(startDir.dot(endDir)), 1) && Mth.equal(startDir.dot(endOffset.normalize()), 1) && endOffset.y == 0) {
+            if(endOffset.lengthSqr()<1e-10)return;
+            boolean straight=endOffset.y==0&&Math.abs(startDir.normalize().dot(endDir.normalize()))>.999999
+                    &&startDir.normalize().dot(endOffset.normalize())>.999999;
+            if(!straight&&com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()
+                    &&endOffset.length()>com.hxzhitang.tongdarailway.railway.fixed.CompactTrackSegments.MAX_CURVE_SPAN) {
+                var pieces=com.hxzhitang.tongdarailway.railway.fixed.CompactTrackSegments.split(start,startDir,start.add(endOffset),endDir);
+                if(!pieces.isEmpty()) {
+                    for(var piece:pieces)addBezier(piece.start(),piece.axis(),piece.end().subtract(piece.start()),piece.endAxis());
+                    return;
+                }
+            }
+            if (straight) {
                 Vec3 end = start.add(endOffset);
                 way.addSegment(new CurveRoute.LineSegment(start, end));
                 int n = Math.max((int) Math.abs(start.x - end.x), (int) Math.abs(start.z - end.z));
