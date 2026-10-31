@@ -38,11 +38,12 @@ public final class FixedRailwayNetwork {
         if(CONTEXT.get()!=null)throw new IllegalStateException("Recursive regional railway planning");
         var local=new PlanningState();local.bounds=bounds;CONTEXT.set(local);
         try {
+            SurfaceStructurePolicy.begin(level,bounds,saved!=null);
             if(saved!=null)restoreAutomatic(saved,level.getSeed());else local.network=network;
             var routes=saved!=null&&saved.has("geometry")?RegionalGeometry.read(net.minecraft.nbt.TagParser.parseTag(saved.get("geometry").getAsString())):plan(builder,level);
             return new RegionalResult(local.network,stations(level.getSeed()),routes,snapshot());
         }catch(com.mojang.brigadier.exceptions.CommandSyntaxException invalid){throw new IllegalArgumentException("Invalid saved regional railway geometry",invalid);}
-        finally{CONTEXT.remove();}
+        finally{SurfaceStructurePolicy.end();CONTEXT.remove();}
     }
     private FixedRailwayNetwork() { }
     public static boolean enabled() {return Config.fixedNodeMode;}
@@ -78,7 +79,7 @@ public final class FixedRailwayNetwork {
             var plan=station(n);var place=new JsonObject();place.addProperty("node",n.id());place.add("place",jsonPos(plan.placePos()));place.addProperty("rotation",switch(plan.stationTemplate().rotation){case NONE->0;case CLOCKWISE_90->90;case CLOCKWISE_180->180;case COUNTERCLOCKWISE_90->270;});placements.add(place);
         }
         for(var l:state().network.links()){var row=new JsonObject();row.addProperty("from",l.from());row.addProperty("to",l.to());links.add(row);}
-        saved.add("nodes",nodes);saved.add("links",links);saved.add("placements",placements);return saved;
+        saved.add("surface_structure_footprints",SurfaceStructurePolicy.footprints());saved.add("nodes",nodes);saved.add("links",links);saved.add("placements",placements);return saved;
     }
     private static JsonArray jsonPos(BlockPos p){var a=new JsonArray();a.add(p.getX());a.add(p.getY());a.add(p.getZ());return a;}
     /** Validate all links before any terrain is changed; nodes are supplied before world generation. */
@@ -128,6 +129,7 @@ public final class FixedRailwayNetwork {
         return new BlockPos(x,y,z);
     }
     public static boolean protects(BlockPos pos) {
+        if(SurfaceStructurePolicy.blocked(pos.getX(),pos.getZ()))return true;
         if(RegionalRailwayNetwork.enabled()) {
             // A landmark can straddle the border of two independently planned systems.
             if(RegionalRailwayNetwork.protects(pos))return true;
@@ -296,6 +298,7 @@ public final class FixedRailwayNetwork {
                 return builder.hasSolidBaseSurface(level,x,z,h)?h:level.getSeaLevel();
             },(x,z)-> {
                 int minX=x+1-width/2,minZ=z+1-depth/2,maxX=minX+width-1,maxZ=minZ+depth-1;
+                if(SurfaceStructurePolicy.stationBlocked(minX,minZ,maxX,maxZ))return false;
                 if(state().bounds!=null&&(!state().bounds.contains(minX,minZ,64)||!state().bounds.contains(maxX,maxZ,64)))return false;
                 if(state().bounds!=null)for(var landmark:RegionalRailwayNetwork.criticalSites()) {
                     if(maxX>=landmark.getX()-96&&minX<=landmark.getX()+96&&maxZ>=landmark.getZ()-96&&minZ<=landmark.getZ()+96)return false;

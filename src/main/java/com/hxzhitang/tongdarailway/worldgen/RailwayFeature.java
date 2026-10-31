@@ -259,11 +259,31 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
             RailwayTemplate bridge = ModStructureManager.getRandomBridge(seed);
             RailwayTemplate tunnel = ModStructureManager.getRandomTunnel(seed);
 
+            // Sample each route cross-section before this chunk writes any road blocks. This
+            // prevents earlier excavation columns from changing the material decision for later walls.
+            var frames=new CurveRoute.Frame[16][16];var naturalIce=new boolean[16][16];var bridgeSection=new boolean[16][16];
+            var iceCuts=new java.util.BitSet[16][16];
+            double iceCore=(tunnel==null?11:tunnel.getDepth())/2.0+1;
+            var materials=new java.util.HashMap<Long,Boolean>();var terrain=new java.util.HashMap<Long,Integer>();
+            int halfWidth=Math.max(ground==null?0:ground.getDepth(),Math.max(bridge==null?0:bridge.getDepth(),tunnel==null?0:tunnel.getDepth()))/2+1;
+            for(int x=0;x<16;x++)for(int z=0;z<16;z++) {
+                var point=new Vec3(cPos.getMinBlockX()+x,80,cPos.getMinBlockZ()+z);var frame=route.getFrame(point);frames[x][z]=frame;
+                if(Math.abs(point.subtract(frame.nearestPoint).dot(frame.binormal0))>halfWidth)continue;
+                var center=BlockPos.containing(frame.nearestPoint);if(!world.hasChunk(center.getX()>>4,center.getZ()>>4))continue;long key=center.asLong();
+                naturalIce[x][z]=materials.computeIfAbsent(key,k->naturalIceCorridor(world,center,frame.binormal0));
+                // Record original ice before template walls can mask it. Local frozen columns
+                // also qualify near rocky shores where the wider material survey rejects ice.
+                double lateral=point.subtract(frame.nearestPoint).dot(frame.binormal0);
+                iceCuts[x][z]=planIceCut(world,cPos.getMinBlockX()+x,cPos.getMinBlockZ()+z,frame,lateral,iceCore,halfWidth);
+                int surface=terrain.computeIfAbsent(key,k->world.getHeight(Heightmap.Types.OCEAN_FLOOR_WG,center.getX(),center.getZ()));
+                bridgeSection[x][z]=frame.nearestPoint.y>surface+4;
+            }
+
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
                     // 获取一个线上点
                     var testPoint0 = new Vec3(cPos.x*16+x, 80, cPos.z*16+z);
-                    CurveRoute.Frame frame = route.getFrame(testPoint0);
+                    CurveRoute.Frame frame = frames[x][z];
 
                     var nearest0 = frame.nearestPoint;
 
@@ -296,9 +316,17 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
                     double z0 = vec0.dot(binormal0);
                     var scars=railwayMap.damagePlans.get(com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route));
                     boolean damage=railwayMap.abandoned&&scars!=null&&scars.contains(localX);
-                    // Omit the central deck AND supports at a failed bridge span. Adjacent edges
-                    // remain, giving a visible break instead of an intact bridge with missing rails.
-                    if(damage&&conditionBridge&&Math.abs(z0)<3)continue;
+                    // Apply only original frozen cells in this chunk's owned column, including
+                    // wall slots and the narrow outer fringe; do this before template early exits.
+                    var cut=iceCuts[x][z];
+                    if(cut!=null)for(int bit=cut.nextSetBit(0);bit>=0;bit=cut.nextSetBit(bit+1)) {
+                        var pos=new BlockPos(cPos.getMinBlockX()+x,world.getMinBuildHeight()+bit,cPos.getMinBlockZ()+z);
+                        if(frozenSnow(world.getBlockState(pos)))placeAndUpdate(world,pos,Blocks.AIR.defaultBlockState());
+                    }
+                    // Remove deck, both railings and supports as one column, including bank-side
+                    // columns of the same bridge cross-section. Uneven ends leave attached fragments.
+                    if(railwayMap.abandoned&&scars!=null&&(conditionBridge||bridgeSection[x][z])
+                            &&scars.bridgeMissing(localX,z0,railwayMap.decaySeed^com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route)))continue;
 
                     if (structureTemplate == null || !structureTemplate.isInVoxel(1, 1, z0))
                         continue;
@@ -314,6 +342,9 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
                         // 根据标架下坐标,从模板结构找到对应方块,并且放置
                         BlockState blockState = structureTemplate.getBlockState(localX, localY, localZ);
                         if (blockState != null) {
+                            // Ice cuts retain native side walls; only tunnel air and the
+                            // existing floor template are written. Rock tunnels keep their lining.
+                            if(!conditionBridge&&!com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.placeTunnelVoxel(naturalIce[x][z]||(cut!=null&&!cut.isEmpty()),blockState.isAir(),localY))continue;
                             BlockPos blockPos = new BlockPos(cPos.getMinBlockX()+x, y, cPos.getMinBlockZ()+z);
                             if (!isGround) {
                                 placeAndUpdate(world, blockPos, blockState);
@@ -359,6 +390,56 @@ public class RailwayFeature extends Feature<RailwayFeatureConfig> {
         }
     }
 
+    /** Plan a bounded open cut from untouched terrain; rocks stop the upward scan.
+     * At the edge only trim thin ice with open space two blocks farther out, retaining broad banks. */
+    private static java.util.BitSet planIceCut(WorldGenLevel world,int x,int z,CurveRoute.Frame frame,double lateral,double core,int halfWidth) {
+        if(Math.abs(lateral)>Math.min(halfWidth,core+2))return null;
+        var removed=new java.util.BitSet();
+        int first=Math.max(world.getMinBuildHeight(),(int)Math.floor(frame.nearestPoint.y)+1);
+        int upper=Math.min(world.getMaxBuildHeight(),world.getHeight(Heightmap.Types.WORLD_SURFACE_WG,x,z));
+        int direction=lateral<0?-1:1;
+        int outerX=x+(int)Math.round(frame.binormal0.x*direction*2);
+        int outerZ=z+(int)Math.round(frame.binormal0.z*direction*2);
+        com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.clearCap(first,upper,y->{
+            var state=world.getBlockState(new BlockPos(x,y,z));
+            if(frozenSnow(state)) {
+                boolean exposed=false;
+                if(Math.abs(lateral)>core&&world.hasChunk(outerX>>4,outerZ>>4)) {
+                    var outside=world.getBlockState(new BlockPos(outerX,y,outerZ));
+                    exposed=outside.isAir()||!outside.getFluidState().isEmpty();
+                }
+                return com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.trimIce(lateral,core,exposed)
+                        ?com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.CapCell.FROZEN
+                        :com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.CapCell.EMPTY;
+            }
+            return state.isAir()||!state.getFluidState().isEmpty()
+                    ?com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.CapCell.EMPTY
+                    :com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.CapCell.OTHER;
+        },y->removed.set(y-world.getMinBuildHeight()));
+        return removed;
+    }
+
+    private static boolean frozenSnow(BlockState state) {
+        return frozenMaterial(state)||state.is(Blocks.SNOW)||state.is(Blocks.POWDER_SNOW);
+    }
+
+    /** Bounded nearby reads use only the worldgen region; no remote chunks are requested.
+     * Samples outside the carved width keep the ice decision stable along chunk boundaries. */
+    private static boolean naturalIceCorridor(WorldGenLevel world,BlockPos center,Vec3 side) {
+        int ice=0,rock=0;
+        for(int lateral:new int[]{-8,0,8})for(int height:new int[]{2,6,10}) {
+            var pos=center.offset((int)Math.round(side.x*lateral),height,(int)Math.round(side.z*lateral));
+            if(!world.hasChunk(pos.getX()>>4,pos.getZ()>>4))continue;
+            var state=world.getBlockState(pos);
+            if(frozenMaterial(state))ice++;
+            else if(state.canOcclude()&&state.getFluidState().isEmpty())rock++;
+        }
+        return com.hxzhitang.tongdarailway.railway.fixed.RailwayTerrainPolicy.naturalIce(ice,rock);
+    }
+
+    private static boolean frozenMaterial(BlockState state) {
+        return state.is(Blocks.ICE)||state.is(Blocks.PACKED_ICE)||state.is(Blocks.BLUE_ICE)||state.is(Blocks.SNOW_BLOCK);
+    }
     private static void placeAndUpdate(WorldGenLevel world, BlockPos blockPos, BlockState blockState) {
         if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled()) {
             if(!com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.protects(blockPos)

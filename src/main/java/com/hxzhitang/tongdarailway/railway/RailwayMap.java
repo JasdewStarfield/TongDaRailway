@@ -10,7 +10,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.server.level.WorldGenRegion;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
 
@@ -42,11 +42,16 @@ public class RailwayMap {
     }
 
     // 规划铁路路线方法
-    public void startPlanningRoutes(WorldGenRegion level, RailwayBuilder builder) {
+    /** Preserve the upstream entry point for integrations that still pass a generation region. */
+    public void startPlanningRoutes(net.minecraft.server.level.WorldGenRegion level, RailwayBuilder builder) {
+        startPlanningRoutes(level.getLevel(),builder);
+    }
+
+    public void startPlanningRoutes(ServerLevel level, RailwayBuilder builder) {
         builder.checkPlanningCancelled();
         if(com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.enabled()) {
             abandoned=true;decaySeed=level.getSeed();
-            var system=com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.plan(builder,level.getLevel(),regionPos);
+            var system=com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.plan(builder,level,regionPos);
             stations.addAll(system.stations());
             for(var route:system.routes()) {
                 damagePlans.put(com.hxzhitang.tongdarailway.railway.fixed.RailwayDecay.identity(route.way()),builder.damagePlan(route));putChunk(route);
@@ -71,13 +76,13 @@ public class RailwayMap {
             stations.addAll(
                     StationPlanner.generateStation(
                             regionPos,
-                            level.getLevel(),
+                            level,
                             level.getSeed(),
                             builder
                     ).stream().map(Pair::getFirst).toList()
             );
             var connections = stationPlanner.generateConnections(
-                    level.getLevel(),
+                    level,
                     level.getSeed(),
                     builder
             );
@@ -99,7 +104,7 @@ public class RailwayMap {
                         }
                 );
                 // 设置出口坐标
-                var route = routePlanner.getWay(builder, way, connection, level.getLevel());
+                var route = routePlanner.getWay(builder, way, connection, level);
                 putChunk(route);
             }
         } catch (CancellationException exception) {

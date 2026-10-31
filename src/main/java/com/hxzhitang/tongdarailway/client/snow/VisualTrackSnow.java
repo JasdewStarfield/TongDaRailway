@@ -77,6 +77,17 @@ public final class VisualTrackSnow {
             for(int x=cx-1;x<=cx+1;x++)for(int z=cz-1;z<=cz+1;z++)affected(ChunkPos.asLong(x,z));
         });
     }
+    /** Light packets can arrive after chunk meshes. Coalesce their refreshes on the client thread,
+     * then reuse the existing 2 ms rebuild budget instead of rescanning rails every frame. */
+    public static void lightChanged(ClientLevel level,SectionPos section) {
+        long key=ChunkPos.asLong(section.x(),section.z());var mc=Minecraft.getInstance();
+        mc.execute(()->{
+            if(owner!=level||mc.level!=level||!wasEnabled)return;
+            var mesh=MESHES.get(key);
+            // Empty/unbuilt meshes either have nothing to relight or are already queued by chunk load.
+            if(mesh!=null&&!mesh.faces().isEmpty())DIRTY.add(key);
+        });
+    }
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
         var mc=Minecraft.getInstance();bind(mc.level);if(owner==null)return;
         boolean enabled=VisualSnowConfig.ENABLED.get();
@@ -144,7 +155,9 @@ public final class VisualTrackSnow {
                 boolean waterlogged=state.getValue(BlockStateProperties.WATERLOGGED);
                 if(!supported||waterlogged)continue;
                 if(!SnowOverlayPolicy.canCover(supported,waterlogged,snowyNeighbours(world,pos,dependencies)))continue;
-                int light=LevelRenderer.getLightColor(world,pos);var at=Vec3.atLowerCornerOf(pos).subtract(origin);
+                // Thin snow is exposed above the rail. Preserve local torch light while also
+                // sampling the air above, rather than keeping a dark rail-cell sample alone.
+                int light=SnowOverlayPolicy.surfaceLight(LevelRenderer.getLightColor(world,pos),LevelRenderer.getLightColor(world,pos.above()));var at=Vec3.atLowerCornerOf(pos).subtract(origin);
                 double h=SnowOverlayPolicy.THIN_SNOW;
                 // Exactly one world-aligned square per occupied block; curves need no extruded mesh.
                 faces.add(face(at.add(0,h,0),at.add(0,h,1),at.add(1,h,1),at.add(1,h,0),light));

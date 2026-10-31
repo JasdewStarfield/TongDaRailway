@@ -36,6 +36,17 @@ Long native curves in the fallback renderer retain Create's 192-block distance l
 
 客户端默认启用薄雪外观，可在 `tongdarailway-client.toml` 切换。外观依据轨面附近的原版或 Snow! Real Magic 积雪生成，清除周围积雪后会消失；不修改轨道方块、碰撞、曲线数据或列车逻辑。雪面使用当前资源包的雪纹理，只覆盖下方有支撑的轨道或曲线辅助方块格子，并与世界方块网格对齐，不沿曲线额外延伸。雪面与原版一层积雪高度一致。独立客户端选项 `curveSleeperSnowClearance` 将原生曲线轨枕显示位置抬高 1/64 格，避免与真实薄雪相交，关闭补雪时也生效；修改后需重新进入世界，钢轨及列车数据保持原样；不额外绘制 DH 远景。
 
+
+### Experimental surface-structure policy / 地表结构对照实验
+
+For fresh regional test worlds, `surface_structure_policy` in `config/tongdarailway-auto-network.json` accepts `off` (default), `avoid`, or `remove`. The choice is saved in the world manifest. The first trial covers vanilla villages, outposts, mansions, temples, huts, igloos and land ruined portals; ocean structures and custom mod placement are excluded. Radar landmarks and underground mines retain their existing rules.
+
+`avoid` previews complete structure layouts without loading remote chunks, reserves their footprints plus construction margins, and routes stations/tracks outside them. `remove` keeps railway paths and rejects an overlapping whole native structure before placement. It does not run a remote footprint survey. The EOW pack selects `remove` for new plans after fresh-world comparison; `avoid` remains an experimental alternative. The standalone fallback is `off`.
+
+新区域测试世界可在 `config/tongdarailway-auto-network.json` 设置 `surface_structure_policy`：`off`（默认）、`avoid`（铁路避让）或 `remove`（取消冲突结构）。选择保存在世界规划清单中。首版覆盖原版村庄、前哨站、林地府邸、神殿、小屋、雪屋和陆地废弃传送门，排除海底建筑；模组自定义选址另行适配；雷达站和地下矿井沿用现有规则。
+
+避让模式预览完整结构布局、预留施工范围并调整线路和车站，不加载远端区块；取消模式保留线路，在原生建筑放置前取消整座冲突结构，无需远方建筑预览。EOW 整合包经新世界对照后为新规划选用 `remove`，`avoid` 保留为实验选项；独立使用时缺省为 `off`。
+
 ---
 
 # TongDaRailway Mod 通达铁路

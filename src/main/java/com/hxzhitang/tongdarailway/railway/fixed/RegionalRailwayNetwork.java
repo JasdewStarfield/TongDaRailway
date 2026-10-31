@@ -53,6 +53,11 @@ public final class RegionalRailwayNetwork {
             var saved=new JsonObject();saved.addProperty("format",1);saved.addProperty("seed",server.overworld().getSeed());saved.addProperty("region_probability",probability);saved.addProperty("neighbor_connection_probability",pairing);
             var array=new JsonArray();for(var p:critical){var a=new JsonArray();a.add(p.getX());a.add(p.getY());a.add(p.getZ());array.add(a);}saved.add("critical",array);Files.writeString(manifest,JSON.toJson(saved));
         }
+        // Freeze the experimental policy with each world just like density and strategic anchors.
+        var metadata=JsonParser.parseString(Files.readString(manifest)).getAsJsonObject();
+        String policy=metadata.has("surface_structure_policy")?metadata.get("surface_structure_policy").getAsString()
+                :options.has("surface_structure_policy")?options.get("surface_structure_policy").getAsString():"off";
+        SurfaceStructurePolicy.configure(policy);SurfaceStructurePolicy.selectTargets(server.overworld());metadata.addProperty("surface_structure_policy",policy);Files.writeString(manifest,JSON.toJson(metadata));
         world=new World(server.overworld().getSeed(),directory,critical,probability,pairing);
         var initialized=world;
         initialized.prefetchWorker.scheduleWithFixedDelay(()->pumpPrefetch(initialized),250,250,TimeUnit.MILLISECONDS);

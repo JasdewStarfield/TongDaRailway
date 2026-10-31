@@ -32,7 +32,7 @@ public class RailwayBuilder {
     public synchronized java.util.List<com.hxzhitang.tongdarailway.railway.planner.RoutePlanner.ResultWay> fixedRoutes() {
         if(fixedFailure!=null)throw fixedFailure;
         try {
-            if(fixedRoutes==null)fixedRoutes=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.plan(this,level.getLevel());
+            if(fixedRoutes==null)fixedRoutes=com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.plan(this,level);
         } catch(RuntimeException failure) {
             // A bad fixed link must not repeat a cold terrain search for every arriving chunk.
             fixedFailure=failure;throw failure;
@@ -60,13 +60,13 @@ public class RailwayBuilder {
     /** Regional endpoint indices are owned by a bounded system cache, not one world-wide route list. */
     public com.hxzhitang.tongdarailway.railway.fixed.WorldgenTrackPlan worldgenTracks(net.minecraft.world.level.ChunkPos owner) {
         if(com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.enabled())return
-                com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.plan(this,level.getLevel(),RegionPos.regionPosFromChunkPos(owner)).tracks();
+                com.hxzhitang.tongdarailway.railway.fixed.RegionalRailwayNetwork.plan(this,level,RegionPos.regionPosFromChunkPos(owner)).tracks();
         return worldgenTracks();
     }
 
     private final long seed;
     private final MinecraftServer server;
-    private final WorldGenRegion level;
+    private final ServerLevel level;
     private final Object taskLock = new Object();
     private volatile boolean closing;
     private volatile boolean cancelled;
@@ -80,7 +80,7 @@ public class RailwayBuilder {
             new ConcurrentHashMap<>();
     private final ThreadPoolExecutor regionRailwayLoadPoolExecutor;
 
-    private RailwayBuilder(long seed, WorldGenRegion level) {
+    private RailwayBuilder(long seed, ServerLevel level) {
         this.seed = seed;
         this.level = level;
         this.server = Objects.requireNonNull(level.getServer());
@@ -104,7 +104,10 @@ public class RailwayBuilder {
         );
     }
 
-    public static RailwayBuilder getInstance(long seed, WorldGenRegion level) {
+    /** Seed planning also runs before noise generation; retain only the server level, never a short-lived generation region. */
+    public static RailwayBuilder getInstance(long seed, WorldGenRegion level) {return getInstance(seed,level.getLevel());}
+
+    public static RailwayBuilder getInstance(long seed, ServerLevel level) {
         RailwayBuilder previous = null;
         RailwayBuilder current;
         synchronized (RailwayBuilder.class) {
@@ -294,14 +297,14 @@ public class RailwayBuilder {
         checkPlanningCancelled();
         // Fixed links sample only their narrow corridor, rather than allocating a 4096-square height map.
         if(com.hxzhitang.tongdarailway.railway.fixed.FixedRailwayNetwork.enabled())
-            return getExactHeight(level.getLevel(),Math.floorDiv(wx+16,32)*32,Math.floorDiv(wz+16,32)*32);
+            return getExactHeight(level,Math.floorDiv(wx+16,32)*32,Math.floorDiv(wz+16,32)*32);
         RegionPos regionPos = new RegionPos(
                 Math.floorDiv(wx, 16 * CHUNK_GROUP_SIZE),
                 Math.floorDiv(wz, 16 * CHUNK_GROUP_SIZE)
         );
         int[][] heightMap = regionHeightMap.computeIfAbsent(
                 regionPos,
-                key -> getHeightMap(level.getLevel(), regionPos)
+                key -> getHeightMap(level, regionPos)
         );
         int px = Math.floorDiv(wx - regionPos.x() * CHUNK_GROUP_SIZE * 16, 16 / samplingNum);
         int pz = Math.floorDiv(wz - regionPos.z() * CHUNK_GROUP_SIZE * 16, 16 / samplingNum);

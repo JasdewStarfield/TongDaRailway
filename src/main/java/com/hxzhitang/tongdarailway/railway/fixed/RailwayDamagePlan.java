@@ -16,6 +16,20 @@ public final class RailwayDamagePlan {
     private RailwayDamagePlan(List<Interval> intervals){this.intervals=List.copyOf(intervals);}
     public List<Interval> intervals(){return intervals;}
     public boolean contains(double distance){return intervals.stream().anyMatch(i->distance>=i.from&&distance<=i.to);}
+    /** Full-width bridge loss shares the saved rail scar. The central track gap stays exact,
+     * while each half-block lateral strip leaves a different short, attached broken edge. */
+    public boolean bridgeMissing(double distance,double lateral,long seed) {
+        for(var interval:intervals) {
+            double left=0,right=0;
+            if(Math.abs(lateral)>=1.25) {
+                long hash=RailwayDecay.mix(seed^Double.doubleToLongBits(interval.from())
+                        ^RailwayDecay.mix((long)Math.floor(lateral*2)));
+                left=1+Math.floorMod(hash,4);right=1+Math.floorMod(hash>>>8,4);
+            }
+            if(distance>=interval.from()+left&&distance<=interval.to()-right)return true;
+        }
+        return false;
+    }
     public boolean keep(CurveRoute route,TrackPutInfo track) {
         if(track.bezier()==null)return !contains(route.getFrame(Vec3.atCenterOf(track.pos())).globalT*route.getTotalLength());
         var span=footprints.computeIfAbsent(track,t->footprint(route,t));

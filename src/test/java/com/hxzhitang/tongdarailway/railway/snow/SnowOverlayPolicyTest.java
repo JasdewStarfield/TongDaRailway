@@ -5,6 +5,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SnowOverlayPolicyTest {
+    @Test void exposedSnowUsesTheAirSkylightSample() {
+        assertEquals(15<<20,SnowOverlayPolicy.surfaceLight(0,15<<20));
+    }
+    @Test void skyAndTorchLightAreCombinedIndependently() {
+        assertEquals((15<<20)|(14<<4),SnowOverlayPolicy.surfaceLight((3<<20)|(14<<4),(15<<20)|(2<<4)));
+    }
+    @Test void unlitTunnelRemainsDark() {
+        assertEquals(0,SnowOverlayPolicy.surfaceLight(0,0));
+    }
     @Test void visualSnowMeetsNativeOneLayerSnowWithoutAHeightStep() {
         assertEquals(1.0/8,SnowOverlayPolicy.THIN_SNOW);
     }
