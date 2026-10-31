@@ -1,5 +1,10 @@
 # Changelog / 更新记录
 
+## 1.1.5-eow.25 — 2026-10-31
+
+- Allow worlds to start when a configured strategic site has no plan or its integration query fails. Skip its station, retain ordinary regional density, and log the site, world, seed, configuration state and exception details.
+- 雷达站等战略节点缺少规划或接口查询失败时，跳过关联站点并继续启动世界；普通区域保持原有概率，日志记录节点、世界、种子、配置状态及异常详情。
+
 ## 1.1.5-eow.24 — 2026-10-31
 
 - Add seed-driven abandoned railway systems with terrain-guided main lines, optional return branches and loops, and stations near strategic landmarks or suitable mine entrances.

@@ -40,30 +40,86 @@ public final class AutomaticRailwayNetwork {
             }
             var ids=options.has("critical_sites")?options.getAsJsonArray("critical_sites"):JsonParser.parseString("[\"eowcore:radar_station\"]").getAsJsonArray();
             if(ids.size()>4)throw new IllegalArgumentException("A starter railway region supports at most four critical sites");
-            // Reflection is confined to this boundary; the fork also runs without EOWCore.
-            if(net.neoforged.fml.ModList.get().isLoaded("eowcore")) {
+            // Missing landmarks affect only their stations; ordinary regions keep their seed-based density.
+            var requested=new ArrayList<String>();for(var id:ids)requested.add(id.getAsString());
+            boolean coreLoaded=net.neoforged.fml.ModList.get().isLoaded("eowcore");
+            critical.addAll(resolveCriticalSites(requested,id->{
+                if(!coreLoaded)return Optional.empty();
                 var api=Class.forName("yourscraft.jasdewstarfield.eowcore.world.StrategicSiteApi");
                 var get=api.getMethod("getCenter",MinecraftServer.class,ResourceLocation.class);
-                for(var id:ids) {
-                    var result=(Optional<?>)get.invoke(null,server,ResourceLocation.parse(id.getAsString()));
-                    if(result.isEmpty())throw new IllegalStateException("Critical site has no plan: "+id);
-                    critical.add((BlockPos)result.get());
-                }
-            }
-            if(critical.isEmpty())critical.add(server.overworld().getSharedSpawnPos());
+                return (Optional<BlockPos>)get.invoke(null,server,ResourceLocation.parse(id));
+            },id->coreLoaded?missingSiteDetails(server,id):"EOWCore is not installed",
+                    (message,failure)->Tongdarailway.LOGGER.warn("[EowRail] "+message
+                            +"; seed="+server.overworld().getSeed()+"; world="+server.getWorldPath(LevelResource.ROOT),failure)));
+            Tongdarailway.LOGGER.info("[EowRail] Critical-site lookup finished: requested={}, resolved={}, skipped={}; regional={}. "
+                    +"Missing sites do not block world startup. Existing world manifests retain their saved anchors.",
+                    requested.size(),critical.size(),requested.size()-critical.size(),regional);
             if(regional){RegionalRailwayNetwork.initialize(server,critical,options);return;}
-            FixedRailwayNetwork.setAutomatic(candidates(server.overworld().getSeed(),critical));
-        } catch(ReflectiveOperationException|java.io.IOException e){throw new IllegalStateException("Cannot initialize automatic railway network",e);}
+            FixedRailwayNetwork.setAutomatic(candidates(server.overworld().getSeed(),critical,server.overworld().getSharedSpawnPos()));
+        } catch(java.io.IOException e){throw new IllegalStateException("Cannot initialize automatic railway network",e);}
+    }
+
+    @FunctionalInterface
+    interface SiteQuery { Optional<BlockPos> get(String id) throws ReflectiveOperationException; }
+
+    /** Resolve each landmark independently, retaining later valid sites after an absent or broken integration. */
+    static List<BlockPos> resolveCriticalSites(List<String> ids,SiteQuery query,
+            java.util.function.Function<String,String> details,java.util.function.BiConsumer<String,Throwable> warning) {
+        var positions=new ArrayList<BlockPos>();
+        for(var id:ids) {
+            try {
+                var result=query.get(id);
+                if(result.isPresent()){positions.add(result.get());continue;}
+                warning.accept("Skipping critical site "+id+": "+details.apply(id)
+                        +"; action=omit associated station, continue ordinary railway planning; no wait/retry during startup",null);
+            }catch(ReflectiveOperationException|RuntimeException failure) {
+                warning.accept("Skipping critical site "+id+": integration query failed ("+failure.getClass().getName()
+                        +"); action=omit associated station, continue ordinary railway planning; full cause follows",failure);
+            }
+        }
+        return List.copyOf(positions);
+    }
+
+    /** Inspect only configuration and saved decisions; diagnostics must not trigger site searches or chunk loads. */
+    private static String missingSiteDetails(MinecraftServer server,String id) {
+        if(!id.equals("eowcore:radar_station"))return "no registered strategic-site plan for this ID";
+        try {
+            var config=Class.forName("yourscraft.jasdewstarfield.eowcore.config.EowCoreConfig");
+            var auto=configValue(config,"AUTO_PLACE_TEMPLATE");
+            var template=configValue(config,"TEMPLATE_ID");
+            var temporary=configValue(config,"TEMPORARY_RADAR_LAYOUT");
+            var dataType=Class.forName("yourscraft.jasdewstarfield.eowcore.world.radar.RadarStationSavedData");
+            var data=dataType.getMethod("get",MinecraftServer.class).invoke(null,server);
+            var selected=(Optional<?>)dataType.getMethod("siteCenter").invoke(data);
+            String reason=Boolean.FALSE.equals(auto)?"radar automatic template placement is disabled"
+                    :selected.isEmpty()?"radar has no selected location; selection may have exhausted the bounded search or not run"
+                    :"radar location is selected but its layout is unavailable; inspect preceding EOWCore template/layout validation logs for the exact resource/error";
+            return reason+"; autoPlaceTemplate="+auto+"; selectedCenter="+selected+"; templateId="+template+"; temporaryLayout="+temporary;
+        }catch(ReflectiveOperationException|RuntimeException failure) {
+            // Preserve the diagnostic failure as well as the original missing-plan result.
+            Tongdarailway.LOGGER.warn("[EowRail] Cannot inspect missing radar plan details; site={}",id,failure);
+            return "no registered radar plan; additional diagnostic query failed: "+failure;
+        }
+    }
+
+    private static Object configValue(Class<?> config,String name)throws ReflectiveOperationException {
+        var value=config.getField(name).get(null);
+        return value.getClass().getMethod("get").invoke(value);
     }
 
     /** Stable radial candidates are fallback small halts, not invented mine or settlement locations. */
     public static FixedRailwayNetwork.Network candidates(long seed,List<BlockPos> sites) {
+        return candidates(seed,sites,BlockPos.ZERO);
+    }
+
+    /** An empty landmark list creates independent halts, never an invented critical station at spawn. */
+    static FixedRailwayNetwork.Network candidates(long seed,List<BlockPos> sites,BlockPos fallbackOrigin) {
         var nodes=new ArrayList<FixedRailwayNetwork.Node>();
         for(int i=0;i<sites.size();i++) {
             var p=sites.get(i);
             nodes.add(new FixedRailwayNetwork.Node("critical_"+i,p.offset(-144,0,96),Direction.WEST,p,64,"critical","small_stone_station_0",0));
         }
-        var random=new Random(seed^0x454f575241494cL);var origin=sites.getFirst();
+        var random=new Random(seed^0x454f575241494cL);var origin=sites.isEmpty()?fallbackOrigin:sites.getFirst();
         double phase=random.nextDouble()*Math.PI*2;
         for(int i=0;i<Math.min(4,6-sites.size());i++) {
             double angle=phase+i*Math.PI/2+(random.nextDouble()-.5)*.3;
