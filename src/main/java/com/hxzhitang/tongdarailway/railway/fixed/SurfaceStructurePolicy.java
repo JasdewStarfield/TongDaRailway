@@ -21,14 +21,22 @@ public final class SurfaceStructurePolicy {
         if(!Set.of("off","avoid","remove").contains(value))throw new IllegalArgumentException("Unknown surface_structure_policy: "+value);
         mode=value;
     }
-    /** First A/B trial covers vanilla surface buildings; expensive third-party custom placement needs explicit adapters. */
+    /** Removal uses completed surface starts from every mod; avoidance retains its bounded vanilla preview scope. */
     public static void selectTargets(ServerLevel level){
         activeLevel=new java.lang.ref.WeakReference<>(level);
         var selected=new HashSet<Structure>();
         for(var e:level.registryAccess().registryOrThrow(Registries.STRUCTURE).entrySet())
-            if(e.getKey().location().getNamespace().equals("minecraft")&&landBuilding(e.getKey().location().getPath())&&e.getValue().step()==GenerationStep.Decoration.SURFACE_STRUCTURES)selected.add(e.getValue());
+            if(targetType(e.getKey().location().getNamespace(), e.getKey().location().getPath(), e.getValue().step(), mode))selected.add(e.getValue());
         targets=Set.copyOf(selected);
-        Tongdarailway.LOGGER.info("[EowRail] Experimental structure policy scope: {} vanilla surface structure types; custom mod structures excluded",targets.size());
+        Tongdarailway.LOGGER.info("[EowRail] Structure policy scope: {} surface structure types",targets.size());
+    }
+    /** Include declared surface buildings and raw-generation candidates. Deep raw starts are filtered after layout. */
+    static boolean targetType(String namespace, String path, GenerationStep.Decoration step, String policy) {
+        // Structory declares even its surface towers as RAW_GENERATION. Their completed
+        // boxes are classified against the natural surface later, without loading chunks.
+        if (policy.equals("remove") && step == GenerationStep.Decoration.RAW_GENERATION) return true;
+        if (step != GenerationStep.Decoration.SURFACE_STRUCTURES) return false;
+        return policy.equals("remove") || namespace.equals("minecraft") && landBuilding(path);
     }
     private static boolean landBuilding(String id){return id.startsWith("village_")||Set.of("pillager_outpost","woodland_mansion","desert_pyramid","jungle_pyramid","swamp_hut","igloo","ruined_portal","ruined_portal_desert","ruined_portal_jungle","ruined_portal_mountain","ruined_portal_swamp").contains(id);}
     public static String mode(){return mode;}
@@ -96,6 +104,13 @@ public final class SurfaceStructurePolicy {
         if(level==null){var current=activeLevel.get();if(current!=null&&context.chunkGenerator()==current.getChunkSource().getGenerator()&&context.seed()==current.getSeed())level=current;}
         if(level==null)return false;
         var box=start.getBoundingBox();
+        if (structure.step() == GenerationStep.Decoration.RAW_GENERATION) {
+            var center = box.getCenter();
+            int ground = context.chunkGenerator().getBaseHeight(center.getX(), center.getZ(),
+                    Heightmap.Types.WORLD_SURFACE_WG, context.heightAccessor(), context.randomState());
+            // Keep deep raw-generation ruins and caves. Surface buildings may have buried foundations.
+            if (box.maxY() < ground - 12) return false;
+        }
         var builder=RailwayBuilder.getInstance(context.seed(),level);
         var visited=new HashSet<RegionalTopology.Unit>();
         for(int x=Math.floorDiv(box.minX()-56,4096);x<=Math.floorDiv(box.maxX()+56,4096);x++)

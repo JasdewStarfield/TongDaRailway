@@ -282,34 +282,63 @@ public final class FixedRailwayNetwork {
         state().network=new Network(state().network.seed(),accepted,state().network.links());
     }
     private static void prepareStation(RailwayBuilder builder,ServerLevel level,Node node) {
-            var neighbours=neighbours(node).stream().map(n->Vec3.atLowerCornerOf(n.rail().subtract(node.rail()))).toList();
-            int rotation=node.rotation();double cost=Double.POSITIVE_INFINITY;
-            for(int turn=0;turn<4;turn++) {
-                int candidate=(node.rotation()+turn*90)%360;
-                var trial=template(node,candidate);
-                double score=StationPortAssignment.solve(neighbours,trial.getExits().stream().map(e->e.dir()).toList()).cost();
-                if(score<cost-1e-8){cost=score;rotation=candidate;}
-            }
-            var template=template(node,rotation);int width=template.getWidth(),depth=template.getDepth();
-            // Compact regional stops get one extra bounded search ring; dry footing and cut/fill limits stay unchanged.
-            var site=StationSiteSelector.select(node.rail(),width,depth,level.getSeaLevel(),(x,z)->builder.getExactHeight(level,x,z),
-                    (x,z)->{
-                int h=builder.getExactHeight(level,x,z);
-                return builder.hasSolidBaseSurface(level,x,z,h)?h:level.getSeaLevel();
-            },(x,z)-> {
+        var neighbours=neighbours(node).stream().map(n->Vec3.atLowerCornerOf(n.rail().subtract(node.rail()))).toList();
+        boolean nearby=AutomaticRailwayNetwork.enabled()&&node.role().equals("critical");
+        long selectionStart=System.nanoTime();
+        StationPlanner.StationGenInfo best=null;StationSiteSelector.Site chosen=null;double cost=Double.POSITIVE_INFINITY;
+        int rotation=node.rotation();
+        for(int turn=0;turn<4;turn++) {
+            int candidate=(node.rotation()+turn*90)%360;var trial=template(node,candidate);
+            double score=StationPortAssignment.solve(neighbours,trial.getExits().stream().map(e->e.dir()).toList()).cost();
+            if(!nearby){if(score<cost-1e-8){cost=score;rotation=candidate;}continue;}
+            try {
+                var site=selectStationSite(builder,level,node,trial);
+                // Joint rotation/position selection avoids pushing a gate-side station away just
+                // to preserve a rail-port orientation chosen before the site was inspected.
+                double value=StationSiteSelector.nearbyCost(site,CriticalStationSiting.approach(node.center()))+score*.25;
+                if(value<cost){cost=value;chosen=site;best=new StationPlanner.StationGenInfo(trial,site.rail().below(trial.getExits().stream().mapToInt(e->e.exitPos().getY()).min().orElseThrow()));}
+            }catch(IllegalArgumentException unsuitable){/* Try the remaining native template rotations. */}
+        }
+        if(!nearby) {
+            var trial=template(node,rotation);chosen=selectStationSite(builder,level,node,trial);
+            best=new StationPlanner.StationGenInfo(trial,chosen.rail().below(trial.getExits().stream().mapToInt(e->e.exitPos().getY()).min().orElseThrow()));
+        }
+        if(best==null)throw new IllegalArgumentException("No nearby native station placement for "+node.id());
+        state().stations.put(node.id(),best);
+        Tongdarailway.LOGGER.info("[EowRail] Grounded station {} at {}: terrain {}..{}, fill {}, cut {}",node.id(),chosen.rail(),chosen.minHeight(),chosen.maxHeight(),chosen.fill(),chosen.cut());
+        if(nearby)Tongdarailway.LOGGER.info("[EowRail] Landmark station {}: centerDistance={}, entranceDistance={}, rotation={}, selectionMs={}",node.id(),
+                Math.hypot(chosen.rail().getX()-node.center().getX(),chosen.rail().getZ()-node.center().getZ()),
+                Math.hypot(chosen.rail().getX()-CriticalStationSiting.approach(node.center()).getX(),chosen.rail().getZ()-CriticalStationSiting.approach(node.center()).getZ()),best.stationTemplate().rotation,(System.nanoTime()-selectionStart)/1e6);
+    }
+    private static StationSiteSelector.Site selectStationSite(RailwayBuilder builder,ServerLevel level,Node node,com.hxzhitang.tongdarailway.structure.StationTemplate template) {
+        int width=template.getWidth(),depth=template.getDepth();
+        // One shared 32-block grid bounds the coarse survey across all four rotations.
+        // The exact 25-column footprint and dry-ground checks below retain full precision.
+        boolean nearby=AutomaticRailwayNetwork.enabled()&&node.role().equals("critical");
+        java.util.function.IntBinaryOperator coarse=(x,z)->builder.getExactHeight(level,
+                nearby?Math.floorDiv(x+16,32)*32:x,nearby?Math.floorDiv(z+16,32)*32:z);
+        java.util.function.IntBinaryOperator exact=(x,z)->{int h=builder.getExactHeight(level,x,z);return builder.hasSolidBaseSurface(level,x,z,h)?h:level.getSeaLevel();};
+        java.util.function.BiPredicate<Integer,Integer> allowed=(x,z)-> {
                 int minX=x+1-width/2,minZ=z+1-depth/2,maxX=minX+width-1,maxZ=minZ+depth-1;
                 if(SurfaceStructurePolicy.stationBlocked(minX,minZ,maxX,maxZ))return false;
                 if(state().bounds!=null&&(!state().bounds.contains(minX,minZ,64)||!state().bounds.contains(maxX,maxZ,64)))return false;
                 if(state().bounds!=null)for(var landmark:RegionalRailwayNetwork.criticalSites()) {
-                    if(maxX>=landmark.getX()-96&&minX<=landmark.getX()+96&&maxZ>=landmark.getZ()-96&&minZ<=landmark.getZ()+96)return false;
+                    if(node.role().equals("critical")) {
+                        if(CriticalStationSiting.overlaps(landmark,minX,minZ,maxX,maxZ,32))return false;
+                    } else if(maxX>=landmark.getX()-96&&minX<=landmark.getX()+96&&maxZ>=landmark.getZ()-96&&minZ<=landmark.getZ()+96)return false;
                     for(var exit:template.getExits())for(int distance=0;distance<=48;distance+=8) {
                         int px=x+exit.exitPos().getX()+(int)(exit.dir().x*distance),pz=z+exit.exitPos().getZ()+(int)(exit.dir().z*distance);
-                        if(Math.abs(px-landmark.getX())<=88&&Math.abs(pz-landmark.getZ())<=88)return false;
+                        if(node.role().equals("critical")?CriticalStationSiting.blocksApproach(landmark,px,pz):Math.abs(px-landmark.getX())<=88&&Math.abs(pz-landmark.getZ())<=88)return false;
                     }
                 }
                 // Reserve the station's existing 32-block terrain blend around all real POIs.
                 for(var other:state().network.nodes()) {
                     if(other.radius()==0)continue;
+                    // The related landmark uses its actual footprint plus the existing terrain blend.
+                    if(node.role().equals("critical")&&other.role().equals("critical")) {
+                        if(CriticalStationSiting.overlaps(other.center(),minX,minZ,maxX,maxZ,32))return false;
+                        continue;
+                    }
                     int radius=other.radius()+32;
                     if(maxX>=other.center().getX()-radius&&minX<=other.center().getX()+radius
                             &&maxZ>=other.center().getZ()-radius&&minZ<=other.center().getZ()+radius)return false;
@@ -318,8 +347,11 @@ public final class FixedRailwayNetwork {
                 for(var exit:template.getExits())for(int distance=0;distance<=48;distance+=8) {
                     int px=x+exit.exitPos().getX()+(int)(exit.dir().x*distance);
                     int pz=z+exit.exitPos().getZ()+(int)(exit.dir().z*distance);
-                    for(var other:state().network.nodes())if(other.radius()>0&&Math.abs(px-other.center().getX())<=other.radius()+24
-                            &&Math.abs(pz-other.center().getZ())<=other.radius()+24)return false;
+                    for(var other:state().network.nodes())if(other.radius()>0) {
+                        if(node.role().equals("critical")&&other.role().equals("critical")) {
+                            if(CriticalStationSiting.blocksApproach(other.center(),px,pz))return false;
+                        } else if(Math.abs(px-other.center().getX())<=other.radius()+24&&Math.abs(pz-other.center().getZ())<=other.radius()+24)return false;
+                    }
                 }
                 for(var placed:state().stations.values()) {
                     var box=placed.stationTemplate().getBeardifierBox(placed.placePos());
@@ -327,11 +359,20 @@ public final class FixedRailwayNetwork {
                 }
                 // Exact footprint columns, rather than the biome name, decide dry footing.
                 return true;
-            },AutomaticRailwayNetwork.enabled()&&node.role().equals("critical")&&node.station().equals("eow_small_halt")?new int[]{128,256,384,512}:state().bounds!=null&&node.station().equals("eow_small_halt")?new int[]{128,192,320}:new int[]{128,192},AutomaticRailwayNetwork.enabled()&&node.station().equals("eow_small_halt")?64:32);
-            int offset=template.getExits().stream().mapToInt(e->e.exitPos().getY()).min().orElseThrow();
-            var plan=new StationPlanner.StationGenInfo(template,site.rail().below(offset));state().stations.put(node.id(),plan);
-            Tongdarailway.LOGGER.info("[EowRail] Grounded station {} at {}: terrain {}..{}, fill {}, cut {}",
-                    node.id(),site.rail(),site.minHeight(),site.maxHeight(),site.fill(),site.cut());
+            };
+        if(nearby) {
+            try{return StationSiteSelector.selectNearby(CriticalStationSiting.approach(node.center()),width,depth,level.getSeaLevel(),coarse,exact,allowed);}
+            catch(IllegalArgumentException noNearSite) {
+                // Prefer the existing smaller native halt before accepting a remote large station.
+                if(!node.station().equals("eow_small_halt"))throw noNearSite;
+                // Difficult seeds retain the former broad compact-station fallback instead of
+                // making a strict proximity preference a new world-start requirement.
+                return StationSiteSelector.select(node.rail(),width,depth,level.getSeaLevel(),coarse,exact,allowed,new int[]{128,256,384,512},64);
+            }
+        }
+        return StationSiteSelector.select(node.rail(),width,depth,level.getSeaLevel(),coarse,exact,allowed,
+                state().bounds!=null&&node.station().equals("eow_small_halt")?new int[]{128,192,320}:new int[]{128,192},
+                AutomaticRailwayNetwork.enabled()&&node.station().equals("eow_small_halt")?64:32);
     }
     private static List<Node> neighbours(Node node) {
         return state().network.links().stream().filter(l->l.from().equals(node.id())||l.to().equals(node.id()))

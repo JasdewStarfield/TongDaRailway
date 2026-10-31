@@ -39,13 +39,17 @@ Long native curves in the fallback renderer retain Create's 192-block distance l
 
 ### Experimental surface-structure policy / 地表结构对照实验
 
-For fresh regional test worlds, `surface_structure_policy` in `config/tongdarailway-auto-network.json` accepts `off` (default), `avoid`, or `remove`. The choice is saved in the world manifest. The first trial covers vanilla villages, outposts, mansions, temples, huts, igloos and land ruined portals; ocean structures and custom mod placement are excluded. Radar landmarks and underground mines retain their existing rules.
+For fresh regional test worlds, `surface_structure_policy` in `config/tongdarailway-auto-network.json` accepts `off` (default), `avoid`, or `remove`. The choice is saved in the world manifest. Removal covers native surface-structure starts from all namespaces, including mod buildings. Raw-generation buildings such as Structory towers are classified against natural surface height; deep raw ruins remain. Avoidance previews remain limited to vanilla land buildings. Radar landmarks and underground mines retain their existing rules.
 
 `avoid` previews complete structure layouts without loading remote chunks, reserves their footprints plus construction margins, and routes stations/tracks outside them. `remove` keeps railway paths and rejects an overlapping whole native structure before placement. It does not run a remote footprint survey. The EOW pack selects `remove` for new plans after fresh-world comparison; `avoid` remains an experimental alternative. The standalone fallback is `off`.
 
-新区域测试世界可在 `config/tongdarailway-auto-network.json` 设置 `surface_structure_policy`：`off`（默认）、`avoid`（铁路避让）或 `remove`（取消冲突结构）。选择保存在世界规划清单中。首版覆盖原版村庄、前哨站、林地府邸、神殿、小屋、雪屋和陆地废弃传送门，排除海底建筑；模组自定义选址另行适配；雷达站和地下矿井沿用现有规则。
+新区域测试世界可在 `config/tongdarailway-auto-network.json` 设置 `surface_structure_policy`：`off`（默认）、`avoid`（铁路避让）或 `remove`（取消冲突结构）。选择保存在世界规划清单中。取消模式覆盖所有命名空间的地表结构起点，包含模组建筑；Structory 塔楼等原始生成阶段建筑按自然地表高度分类，保留深埋遗迹。避让模式仍只预览原版陆地建筑；雷达站和地下矿井沿用现有规则。
 
 避让模式预览完整结构布局、预留施工范围并调整线路和车站，不加载远端区块；取消模式保留线路，在原生建筑放置前取消整座冲突结构，无需远方建筑预览。EOW 整合包经新世界对照后为新规划选用 `remove`，`avoid` 保留为实验选项；独立使用时缺省为 `off`。
+
+Radar-linked stations prefer dry, suitable ground near the actual gate and compare native template rotations together with distance. A shared coarse survey limits planning work; the final footprint retains exact terrain and dry-ground checks. Difficult terrain can use the broader fallback search. This placement change does not add connecting roads.
+
+雷达站关联车站优先选择靠近实际院门的合格陆地，并结合原生模板朝向比较距离。粗采样共享地形网格，最终地基仍精查高差和干燥条件；复杂地形可回退到较大范围搜索。本项调整不生成接驳道路。
 
 ---
 

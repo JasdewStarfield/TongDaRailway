@@ -58,6 +58,7 @@ public final class RegionalRailwayNetwork {
         String policy=metadata.has("surface_structure_policy")?metadata.get("surface_structure_policy").getAsString()
                 :options.has("surface_structure_policy")?options.get("surface_structure_policy").getAsString():"off";
         SurfaceStructurePolicy.configure(policy);SurfaceStructurePolicy.selectTargets(server.overworld());metadata.addProperty("surface_structure_policy",policy);Files.writeString(manifest,JSON.toJson(metadata));
+        CriticalStationSiting.initialize(server);
         world=new World(server.overworld().getSeed(),directory,critical,probability,pairing);
         var initialized=world;
         initialized.prefetchWorker.scheduleWithFixedDelay(()->pumpPrefetch(initialized),250,250,TimeUnit.MILLISECONDS);

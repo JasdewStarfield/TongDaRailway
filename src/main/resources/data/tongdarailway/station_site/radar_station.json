@@ -1,0 +1,9 @@
+{
+  "piece": "eowcore:radar_station/x000_y000_z000",
+  "entrance": [
+    13,
+    3,
+    42
+  ],
+  "outward": "west"
+}

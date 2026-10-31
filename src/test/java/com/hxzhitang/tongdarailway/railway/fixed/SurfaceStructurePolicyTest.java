@@ -18,5 +18,11 @@ class SurfaceStructurePolicyTest {
   assertTrue(SurfaceStructurePolicy.intersects(plan,new BoundingBox(40,60,20,50,90,30)));
   assertFalse(SurfaceStructurePolicy.intersects(plan,new BoundingBox(40,60,30,50,90,40)));
  }
+ @Test void removalIncludesModSurfaceStartsWithoutExpandingAvoidancePreviews(){
+  var surface=net.minecraft.world.level.levelgen.GenerationStep.Decoration.SURFACE_STRUCTURES;
+  assertTrue(SurfaceStructurePolicy.targetType("structory","firetower",net.minecraft.world.level.levelgen.GenerationStep.Decoration.RAW_GENERATION,"remove"));
+  assertFalse(SurfaceStructurePolicy.targetType("structory","firetower",surface,"avoid"));
+  assertFalse(SurfaceStructurePolicy.targetType("minecraft","mineshaft",net.minecraft.world.level.levelgen.GenerationStep.Decoration.UNDERGROUND_STRUCTURES,"remove"));
+ }
  @Test void unknownPolicyIsRejected(){assertThrows(IllegalArgumentException.class,()->SurfaceStructurePolicy.configure("unknown"));}
 }

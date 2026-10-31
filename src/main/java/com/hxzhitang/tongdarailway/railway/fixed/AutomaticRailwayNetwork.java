@@ -22,7 +22,7 @@ public final class AutomaticRailwayNetwork {
     private static final Gson JSON=new GsonBuilder().setPrettyPrinting().create();
     private AutomaticRailwayNetwork() {}
     public static boolean enabled(){return enabled;}
-    public static void reset(){enabled=false;snapshot=null;critical.clear();RegionalRailwayNetwork.clear();}
+    public static void reset(){enabled=false;snapshot=null;critical.clear();RegionalRailwayNetwork.clear();CriticalStationSiting.clear();}
 
     /** Runs after Core's strategic-site initialization, while saved data is owned by the server thread. */
     public static void initialize(MinecraftServer server) {
@@ -117,7 +117,7 @@ public final class AutomaticRailwayNetwork {
         var nodes=new ArrayList<FixedRailwayNetwork.Node>();
         for(int i=0;i<sites.size();i++) {
             var p=sites.get(i);
-            nodes.add(new FixedRailwayNetwork.Node("critical_"+i,p.offset(-144,0,96),Direction.WEST,p,64,"critical","small_stone_station_0",0));
+            nodes.add(new FixedRailwayNetwork.Node("critical_"+i,CriticalStationSiting.preferred(p),Direction.WEST,p,64,"critical","small_stone_station_0",0));
         }
         var random=new Random(seed^0x454f575241494cL);var origin=sites.isEmpty()?fallbackOrigin:sites.getFirst();
         double phase=random.nextDouble()*Math.PI*2;

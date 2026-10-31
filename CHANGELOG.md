@@ -1,5 +1,15 @@
 # Changelog / 更新记录
 
+## 1.1.5-eow.33 — 2026-11-01
+
+- Reject overlapping mod surface buildings, including Structory raw-generation towers, while preserving deep raw ruins.
+- 排除与铁路重叠的模组地表建筑，包含 Structory 原始生成阶段塔楼，并保留深埋遗迹。
+
+## 1.1.5-eow.32 — 2026-10-31
+
+- Place radar-linked stations near the actual rotated gate, considering native station rotation together with proximity. Preserve dry footing, bounded cut/fill and structure clearance. Pedestrian road generation is not included.
+- 雷达站关联车站优先靠近实际旋转后的院门，结合原生车站朝向选择近距离位置，保留干燥地基、填挖量和建筑避让限制。本版不包含接驳道路生成。
+
 ## 1.1.5-eow.30 — 2026-10-31
 
 - Clear ice cuts from original terrain across wall slots and trim narrow exposed edge remnants, retaining broad ice banks and the railway floor.

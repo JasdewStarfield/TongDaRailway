@@ -49,6 +49,37 @@ public final class StationSiteSelector {
         }
         throw new IllegalArgumentException("No dry, sufficiently flat station footprint near "+preferred);
     }
+    /** Critical sites prefer the nearest acceptable footprint to their entrance, not the flattest remote field.
+     * Dry footing and cut/fill limits match the ordinary selector; only ranking and search spacing differ. */
+    public static Site selectNearby(BlockPos entrance,int width,int depth,int seaLevel,
+                                     IntBinaryOperator coarse,IntBinaryOperator exact,BiPredicate<Integer,Integer> allowed) {
+        var examined=new HashSet<Long>();
+        for(int radius:new int[]{64,96,128,160,192,256,320}) {
+            var candidates=new ArrayList<Site>();
+            for(int dx=-radius;dx<=radius;dx+=16)for(int dz=-radius;dz<=radius;dz+=16) {
+                if(dx*dx+dz*dz>radius*radius)continue;
+                int x=entrance.getX()+dx,z=entrance.getZ()+dz;
+                if(!allowed.test(x,z))continue;
+                var sampled=sample(entrance,x,z,width,depth,3,coarse);
+                if(sampled.minHeight()<=seaLevel+1)continue;
+                candidates.add(sampled);
+            }
+            // Distance bands stop a perfectly flat faraway site from displacing a nearby usable one.
+            candidates.sort(Comparator.comparingInt((Site v)->(int)(Math.hypot(v.rail().getX()-entrance.getX(),v.rail().getZ()-entrance.getZ())/16))
+                    .thenComparingDouble(Site::score).thenComparingInt(v->v.rail().getX()).thenComparingInt(v->v.rail().getZ()));
+            Site best=null;int count=0;
+            for(var candidate:candidates) {
+                long key=((long)candidate.rail().getX()<<32)^(candidate.rail().getZ()&0xffffffffL);
+                if(count>=12)break;if(!examined.add(key))continue;count++;
+                var refined=sample(entrance,candidate.rail().getX(),candidate.rail().getZ(),width,depth,5,exact);
+                if(refined.rail().getY()>250||refined.minHeight()<=seaLevel+1||refined.maxHeight()-refined.minHeight()>8||refined.fill()>5||refined.cut()>5)continue;
+                if(best==null||nearbyCost(refined,entrance)<nearbyCost(best,entrance))best=refined;
+            }
+            if(best!=null)return best;
+        }
+        throw new IllegalArgumentException("No nearby dry station footprint around landmark entrance "+entrance);
+    }
+    public static double nearbyCost(Site site,BlockPos entrance){return Math.hypot(site.rail().getX()-entrance.getX(),site.rail().getZ()-entrance.getZ())+site.score()*.01;}
     private static Site sample(BlockPos preferred,int x,int z,int width,int depth,int grid,IntBinaryOperator heights) {
         int[] values=new int[grid*grid];int n=0;
         int left=x+1-width/2,top=z+1-depth/2;
